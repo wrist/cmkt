@@ -1,0 +1,22 @@
+.PHONY: build dbuild clean rebuild run test lint format
+
+build:
+	cmake -B build -S . --preset=default
+	cmake --build build
+
+clean:
+	cmake --build build --target clean
+
+rebuild: clean build
+
+run:
+	./build/src/{{ project_name }}
+
+test:
+	ctest --output-on-failure
+
+format:
+	clang-format -i src/*.cpp include/**/*.h
+
+lint:
+	clang-tidy src/*.cpp

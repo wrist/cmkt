@@ -1,0 +1,21 @@
+cmake_minimum_required(VERSION 3.13)
+project({{ project_name }})
+
+set(CMAKE_CXX_STANDARD {{ cpp_version }})
+
+{% if binary_type == "executable" -%}
+add_executable({{ project_name }} main.cpp)
+{% elif binary_type == "static" -%}
+add_library({{ project_name }} STATIC lib.cpp)
+{% else -%}
+add_library({{ project_name }} SHARED lib.cpp)
+{% endif -%}
+
+if(MSVC)
+    target_compile_options({{ project_name }} PRIVATE /EHsc /W4 /MP)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options({{ project_name }} PRIVATE -Wall -Wextra -Wpedantic)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options({{ project_name }} PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+

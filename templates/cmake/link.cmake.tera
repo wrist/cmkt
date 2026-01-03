@@ -1,0 +1,10 @@
+{% if packages -%}
+  {% for package in packages -%}
+  target_link_libraries({{ project_name }} 
+                        PRIVATE 
+                        {% for lib_name in package.lib_names -%}
+                          {{ lib_name }}
+                        {% endfor -%}
+                       )
+  {% endfor -%}
+{% endif -%}

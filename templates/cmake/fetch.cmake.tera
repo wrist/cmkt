@@ -1,0 +1,26 @@
+include(FetchContent)
+
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
+
+{% if packages -%}
+  {% for package in packages %}
+    {% if package.fetch_mode == "declare" -%}
+      FetchContent_Declare(
+        {{package.name}}
+        GIT_REPOSITORY {{package.base_url}}/{{package.repo}}.git
+        {% if package.tag -%}
+        GIT_TAG {{package.tag}}
+        {% endif -%}
+      )
+      FetchContent_MakeAvailable({{package.name}})
+    {% else -%}
+      FetchContent_Populate(
+        {{package.name}}
+        GIT_REPOSITORY {{package.base_url}}/{{package.repo}}.git
+        {% if package.tag -%}
+        GIT_TAG {{package.tag}}
+        {% endif -%}
+      )
+    {% endif -%}
+  {% endfor %}
+{% endif -%}

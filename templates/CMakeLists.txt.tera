@@ -1,0 +1,25 @@
+cmake_minimum_required(VERSION 3.13)
+project({{ project_name }}Root)
+
+include(cmake/fetch.cmake)
+
+add_subdirectory(src)
+
+include(cmake/link.cmake)
+
+{% if with_tests %}
+enable_testing()
+
+add_subdirectory(tests)
+target_include_directories({{ project_name }}_test PRIVATE src)
+
+{% if binary_type != "executable" -%}
+target_link_libraries({{ project_name }}_test PRIVATE {{ project_name }})
+{% endif -%}
+
+add_test(
+  NAME {{ project_name }}_ctest
+  COMMAND ./tests/{{ project_name }}_test
+)
+
+{% endif %}

@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "default",
+      "generator": "{{ generator }}",
+      "binaryDir": "build",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "{{ cpp_version }}"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    }
+  ]
+}

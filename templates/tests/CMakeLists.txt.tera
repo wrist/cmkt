@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 3.13)
+project({{ project_name }}_test)
+
+set(CMAKE_CXX_STANDARD {{ cpp_version }})
+
+add_executable({{ project_name }}_test main.cpp)
+
+if(MSVC)
+    target_compile_options({{ project_name }} PRIVATE /EHsc /W4 /MP)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options({{ project_name }} PRIVATE -Wall -Wextra -Wpedantic)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options({{ project_name }} PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+

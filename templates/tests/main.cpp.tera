@@ -1,0 +1,27 @@
+#include <iostream>
+
+{% if binary_type == "executable" -%}
+
+int main() {
+  return 0;
+}
+
+{% else -%}
+
+#include "lib.h"
+
+int main() {
+    int result = add(2, 3);
+
+    if( result == 5 ){
+      printf("[SUCCESS] add(2, 3) returns %d\n", result);
+
+      return 0;
+    } else {
+      printf("[FAIL] add(2, 3) returns %d\n", result);
+      return 1;
+    }
+}
+
+{% endif -%}
+
