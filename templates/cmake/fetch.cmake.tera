@@ -10,6 +10,7 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
         GIT_REPOSITORY {{package.base_url}}/{{package.repo}}.git
         {% if package.tag -%}
         GIT_TAG {{package.tag}}
+        EXCLUDE_FROM_ALL
         {% endif -%}
       )
       FetchContent_MakeAvailable({{package.name}})

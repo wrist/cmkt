@@ -13,7 +13,7 @@ use toml_edit::{Array, DocumentMut, Item, value};
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Cli {
-    #[arg(help = "Run script defined in project.toml(alias of cmk scripts)")]
+    #[arg(help = "Run script defined in project.toml(alias of cmkt scripts)")]
     scripts: Option<String>,
 
     #[command(subcommand)]
@@ -65,8 +65,6 @@ enum Commands {
         #[arg(short, long, default_value=None)]
         lib_names: Option<Vec<String>>,
     },
-    /// Not implemented yet
-    Install,
 }
 
 #[derive(Serialize, Debug)]
@@ -460,9 +458,6 @@ fn main() {
             fetch_mode,
             lib_names,
         }) => add_package(repo, base_url, tag, fetch_mode, lib_names).expect("Cannot add package"),
-        Some(Commands::Install) => {
-            todo!()
-        }
         None => {
             if let Some(script) = cli.scripts {
                 dispatch_script(script).expect("Cannot dispatch script")

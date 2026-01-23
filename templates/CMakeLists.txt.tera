@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.28)
 project({{ project_name }}Root)
 
 include(cmake/fetch.cmake)
@@ -6,6 +6,15 @@ include(cmake/fetch.cmake)
 add_subdirectory(src)
 
 include(cmake/link.cmake)
+
+install(TARGETS {{ project_name }}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/{{ project_name }}
+)
+
+include(CPack)
 
 {% if with_tests %}
 enable_testing()
