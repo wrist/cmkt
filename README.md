@@ -33,12 +33,12 @@ $ cargo install --path .
 - [ ] Publish as binary crate
 - [ ] Add unit tests and integration tests based on `assert_cmd`, `assert_fs`
 - [ ] Setup CI/CD
-- [ ] Fix tera template(unnatural spaces and line breaks in artifacts)
+- [x] Fix tera template(unnatural spaces and line breaks in artifacts)
 - [ ] Introduce config file(`cmkt.toml`)
 - [ ] Project generation based on user prepared template directory
-- [ ] Project root discovery and run command anywhere
+- [x] Project root discovery and run command anywhere
 - [ ] Pass args to scripts and pre defined macro
-- [ ] Modify scripts format from oneliner to command with args array
+- [x] Modify scripts format from oneliner to command with args array
 - [ ] Packaging using CPack
 - [ ] Add sync command to reflect manually edited project.toml to link/fetch.cmake
 - [ ] Automatic branch/tag detection using `git ls-remote` through git2 library
