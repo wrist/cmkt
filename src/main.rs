@@ -1,10 +1,11 @@
+use std::fs;
 use std::io::Result;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clap::{Parser, Subcommand};
 use git2::Repository;
 use serde::Serialize;
-use std::{fs, path::Path};
 use tera::{Context, Tera};
 use toml::Value;
 use toml_edit::{Array, DocumentMut, Item, value};
@@ -150,7 +151,25 @@ fn execute_script(value: &Value) -> Result<()> {
     Ok(())
 }
 
+fn find_project_root() -> Result<PathBuf> {
+    let mut current_dir = std::env::current_dir()?;
+    loop {
+        if current_dir.join("project.toml").exists() {
+            return Ok(current_dir);
+        }
+        if !current_dir.pop() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "project.toml not found in any parent directory",
+            ));
+        }
+    }
+}
+
 fn run_script(name: &str) -> Result<()> {
+    let root = find_project_root()?;
+    std::env::set_current_dir(&root)?;
+
     const TOML_FNAME: &str = "project.toml";
 
     let contents = fs::read_to_string(TOML_FNAME).map_err(|_| {
@@ -178,7 +197,8 @@ fn add_package(
     fetch_mode: String,
     mut lib_names: Option<Vec<String>>,
 ) -> Result<()> {
-    let project_dir = Path::new(".");
+    let project_dir = find_project_root()?;
+    std::env::set_current_dir(&project_dir)?;
 
     //let name = repo.replace("/", "_") + "_" + &tag.replace(".", "_");
     let name = repo.replace("/", "_");
