@@ -54,8 +54,8 @@ enum Commands {
         base_url: String,
 
         /// Repository version(tag or branch)
-        #[arg(short, long, default_value = "main")]
-        tag: String,
+        #[arg(short, long)]
+        tag: Option<String>,
 
         /// FetchContent declare or populate
         #[arg(short, long, default_value = "declare")]
@@ -190,27 +190,69 @@ fn run_script(name: &str) -> Result<()> {
     execute_script(script_value)
 }
 
+fn get_remote_default_branch(url: &str) -> Result<String> {
+    use git2::{Direction, Remote};
+
+    let mut remote = Remote::create_detached(url).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to create remote for {}: {}", url, e),
+        )
+    })?;
+
+    remote.connect(Direction::Fetch).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to connect to remote {}: {}", url, e),
+        )
+    })?;
+
+    let heads = remote.list().map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to list refs from {}: {}", url, e),
+        )
+    })?;
+
+    for head in heads {
+        if head.name() == "HEAD" {
+            if let Some(target) = head.symref_target() {
+                // refs/heads/main -> main
+                return Ok(target.replace("refs/heads/", ""));
+            }
+        }
+    }
+
+    Ok("main".to_string())
+}
+
 fn add_package(
     repo: String,
     base_url: String,
-    tag: String,
+    tag: Option<String>,
     fetch_mode: String,
     mut lib_names: Option<Vec<String>>,
 ) -> Result<()> {
     let project_dir = find_project_root()?;
     std::env::set_current_dir(&project_dir)?;
 
-    //let name = repo.replace("/", "_") + "_" + &tag.replace(".", "_");
+    let url = format!("{}/{}.git", base_url, repo);
+    let tag = if let Some(t) = tag {
+        t
+    } else {
+        println!("Detecting default branch for {}...", url);
+        get_remote_default_branch(&url)?
+    };
+
     let name = repo.replace("/", "_");
 
     if lib_names.is_none() {
-        let repo: Vec<_> = repo.split("/").collect();
-        if repo.len() > 1 {
-            lib_names = vec![repo[1].to_string()].into();
+        let repo_parts: Vec<_> = repo.split("/").collect();
+        if repo_parts.len() > 1 {
+            lib_names = vec![repo_parts[1].to_string()].into();
         } else {
-            lib_names = vec![repo[0].to_string()].into();
+            lib_names = vec![repo_parts[0].to_string()].into();
         }
-        //println!("lib names is none! => {:?}", lib_names);
     }
 
     let package = PackageData {
