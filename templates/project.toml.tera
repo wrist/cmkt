@@ -3,10 +3,13 @@ name = "{{ project_name }}"
 version = "0.1.0"
 
 [scripts]
-build = ["cmake --preset default -B build -S .", "cmake --build build --preset default"]
-run   = ["./build/src/{{ project_name }}"]
-install = ["cmake --install build"]
-test  = ["ctest --output-on-failure --test-dir build"]
-format = ["clang-format -i src/*.cpp"]
+build = [
+  ["cmake", "--preset", "default", "-B", "build", "-S", "."],
+  ["cmake", "--build", "build", "--preset", "default"]
+]
+run = ["./build/src/{{ project_name }}"]
+install = ["cmake", "--install", "build"]
+test = ["ctest", "--output-on-failure", "--test-dir", "build"]
+format = ["clang-format", "-i", "src/*.cpp"]
 
 [dependencies]

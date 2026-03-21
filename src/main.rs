@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::Result;
 use std::process::Command;
 
@@ -86,51 +85,90 @@ struct TemplateData {
     with_tests: bool,
 }
 
-fn run_command(cmd: &str) -> Result<()> {
-    #[cfg(windows)]
-    let status = Command::new("cmd").args(["/C", cmd]).status()?;
+fn run_command(cmd_parts: Vec<&str>, use_shell: bool) -> Result<()> {
+    let mut command = if use_shell {
+        #[cfg(windows)]
+        {
+            let mut c = Command::new("cmd");
+            c.arg("/C").arg(cmd_parts[0]);
+            c
+        }
+        #[cfg(not(windows))]
+        {
+            let mut c = Command::new("sh");
+            c.arg("-c").arg(cmd_parts[0]);
+            c
+        }
+    } else {
+        let mut c = Command::new(cmd_parts[0]);
+        if cmd_parts.len() > 1 {
+            c.args(&cmd_parts[1..]);
+        }
+        c
+    };
 
-    #[cfg(not(windows))]
-    let status = Command::new("sh").args(["-c", cmd]).status()?;
+    let status = command.status()?;
 
     if !status.success() {
-        println!("command failed: {}", cmd);
+        println!("command failed: {:?}", cmd_parts);
     }
     Ok(())
 }
 
-fn dispatch_script(script: String) -> Result<()> {
+fn execute_script(value: &Value) -> Result<()> {
+    match value {
+        Value::String(cmd_str) => {
+            // Case 1: String -> Shell execution
+            println!("Execute (shell): {}", cmd_str);
+            run_command(vec![cmd_str], true)?;
+        }
+        Value::Array(cmd_array) => {
+            if cmd_array.is_empty() {
+                return Ok(());
+            }
+
+            // Check if it's an array of strings (Case 2) or contains arrays (Case 3)
+            if cmd_array[0].is_array() {
+                // Case 3: Array of arrays -> Multiple commands
+                for sub_value in cmd_array {
+                    execute_script(sub_value)?;
+                }
+            } else {
+                // Case 2: Array of strings -> Single command with args
+                let args: Vec<&str> = cmd_array.iter().filter_map(|v| v.as_str()).collect();
+
+                if !args.is_empty() {
+                    println!("Execute (direct): {:?}", args);
+                    run_command(args, false)?;
+                }
+            }
+        }
+        _ => {
+            println!("Unsupported script format: {}", value);
+        }
+    }
+    Ok(())
+}
+
+fn run_script(name: &str) -> Result<()> {
     const TOML_FNAME: &str = "project.toml";
 
-    let contents = fs::read_to_string(TOML_FNAME).expect("Failed to read project.toml");
+    let contents = fs::read_to_string(TOML_FNAME).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "Failed to read project.toml")
+    })?;
 
-    let config: HashMap<String, Value> =
-        toml::from_str(&contents).expect("Could not convert to HashMap");
+    let config: Value = toml::from_str(&contents)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
-    //println!("{:?}", config);
+    let script_value = config
+        .get("scripts")
+        .and_then(|s| s.get(name))
+        .ok_or_else(|| {
+            println!("script name '{}' doesn't exist in [scripts] section", name);
+            std::io::Error::new(std::io::ErrorKind::NotFound, "Script not found")
+        })?;
 
-    if let Some(table) = config.get("scripts") {
-        if let Some(commands) = table.get(&script) {
-            if let Some(commands) = commands.as_array() {
-                for command in commands.iter() {
-                    if let Some(command) = command.as_str() {
-                        println!("Execute command: {:?}", command);
-                        let _ = run_command(&command);
-                    }
-                }
-            } else if let Some(command) = commands.as_str() {
-                println!("Execute command: {:?}", command);
-                let _ = run_command(&command);
-            }
-            //println!("{:?}", commands);
-        } else {
-            println!("script name {} doesn't exist in [scripts] section", &script);
-        }
-    } else {
-        println!("[scripts] section doesn't exist in project.toml");
-    }
-
-    Ok(())
+    execute_script(script_value)
 }
 
 fn add_package(
@@ -448,9 +486,7 @@ fn main() {
             binary_type,
             with_tests,
         }) => create_project(name, cpp, generator, binary_type, with_tests),
-        Some(Commands::Scripts { script }) => {
-            dispatch_script(script).expect("Cannot dispatch script")
-        }
+        Some(Commands::Scripts { script }) => run_script(&script).expect("Failed to run script"),
         Some(Commands::Add {
             repo,
             base_url,
@@ -460,7 +496,7 @@ fn main() {
         }) => add_package(repo, base_url, tag, fetch_mode, lib_names).expect("Cannot add package"),
         None => {
             if let Some(script) = cli.scripts {
-                dispatch_script(script).expect("Cannot dispatch script")
+                run_script(&script).expect("Failed to run script")
             }
         }
     }
