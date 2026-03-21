@@ -40,5 +40,7 @@ $ cargo install --path .
 - [ ] Pass args to scripts and pre defined macro
 - [x] Modify scripts format from oneliner to command with args array
 - [ ] Packaging using CPack
-- [ ] Add sync command to reflect manually edited project.toml to link/fetch.cmake
-- [ ] Automatic branch/tag detection using `git ls-remote` through git2 library
+- [x] Add sync command to reflect manually edited project.toml to link/fetch.cmake
+- [x] Automatic branch/tag detection using `git ls-remote` through git2 library
+- [ ] Execute sync command before execute build command if needed
+- [ ] Execute build command before execute run command if needed

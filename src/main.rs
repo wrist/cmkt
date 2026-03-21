@@ -65,6 +65,8 @@ enum Commands {
         #[arg(short, long, default_value=None)]
         lib_names: Option<Vec<String>>,
     },
+    /// Sync project.toml to cmake files
+    Sync,
 }
 
 #[derive(Serialize, Debug)]
@@ -84,6 +86,67 @@ struct TemplateData {
     generator: String,
     binary_type: String,
     with_tests: bool,
+}
+
+fn get_packages_from_doc(doc: &DocumentMut) -> Vec<PackageData> {
+    let mut packages: Vec<PackageData> = vec![];
+    let deps = &doc["dependencies"];
+
+    if let Some(table) = deps.as_table() {
+        for (keys, value) in table.get_values() {
+            let vs = value.as_inline_table().unwrap();
+            packages.push(PackageData {
+                name: keys[0].get().to_string(),
+                repo: vs["repo"].as_str().unwrap().to_string(),
+                base_url: vs["base_url"].as_str().unwrap().to_string(),
+                tag: vs["tag"].as_str().unwrap().to_string(),
+                fetch_mode: vs["fetch_mode"].as_str().unwrap().to_string(),
+                lib_names: vs["lib_names"]
+                    .as_array()
+                    .unwrap()
+                    .into_iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect(),
+            })
+        }
+    }
+    packages
+}
+
+fn generate_cmake_files(
+    project_dir: &Path,
+    project_name: &str,
+    packages: &[PackageData],
+) -> Result<()> {
+    let mut tera = Tera::default();
+
+    let mut ctx = Context::new();
+    ctx.insert("packages", packages);
+    ctx.insert("project_name", project_name);
+
+    let _ = tera.add_raw_template(
+        "cmake/fetch.cmake.tera",
+        include_str!("../templates/cmake/fetch.cmake.tera"),
+    );
+    let _ = tera.add_raw_template(
+        "cmake/link.cmake.tera",
+        include_str!("../templates/cmake/link.cmake.tera"),
+    );
+
+    render_file(
+        &tera,
+        "cmake/fetch.cmake.tera",
+        project_dir.join("cmake/fetch.cmake"),
+        &ctx,
+    );
+    render_file(
+        &tera,
+        "cmake/link.cmake.tera",
+        project_dir.join("cmake/link.cmake"),
+        &ctx,
+    );
+
+    Ok(())
 }
 
 fn run_command(cmd_parts: Vec<&str>, use_shell: bool) -> Result<()> {
@@ -293,64 +356,30 @@ fn add_package(
     //println!("Add dependency: {:?}", &package);
     println!("Current dependencies:\n{}", &deps);
 
-    let mut packages: Vec<PackageData> = vec![];
-    for (keys, value) in deps.as_table().unwrap().get_values() {
-        //println!("Keys: {:?}", keys[0].get());
-        //for(ks, vs) in value.as_inline_table().unwrap().get_values() {
-        //    println!("Keys: {:?} Value: {:?}", ks[0].get(), vs.as_str().unwrap());
-        //}
-
-        //let kvs = value.as_inline_table().unwrap().get_values();
-        //println!("Keys: {:?} Value: {:?}", kvs[0].0[0].get(), kvs[0].1.as_str().unwrap());
-        //println!("Repo Value: {:?}", vs["repo"].as_str().unwrap());
-
-        let vs = value.as_inline_table().unwrap();
-        packages.push(PackageData {
-            name: keys[0].get().to_string(),
-            repo: vs["repo"].as_str().unwrap().to_string(),
-            base_url: vs["base_url"].as_str().unwrap().to_string(),
-            tag: vs["tag"].as_str().unwrap().to_string(),
-            fetch_mode: vs["fetch_mode"].as_str().unwrap().to_string(),
-            lib_names: vs["lib_names"]
-                .as_array()
-                .unwrap()
-                .into_iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect(),
-        })
-    }
+    let packages = get_packages_from_doc(&doc);
 
     //println!("toml: {}", &doc);
     let _ = fs::write(TOML_FNAME, doc.to_string());
 
-    // render
-    let mut tera = Tera::default();
+    generate_cmake_files(&project_dir, &project_name, &packages)?;
 
-    let mut ctx = Context::new();
-    ctx.insert("packages", &packages);
-    ctx.insert("project_name", &project_name);
+    Ok(())
+}
 
-    let _ = tera.add_raw_template(
-        "cmake/fetch.cmake.tera",
-        include_str!("../templates/cmake/fetch.cmake.tera"),
-    );
-    let _ = tera.add_raw_template(
-        "cmake/link.cmake.tera",
-        include_str!("../templates/cmake/link.cmake.tera"),
-    );
+fn sync_project() -> Result<()> {
+    let project_dir = find_project_root()?;
+    std::env::set_current_dir(&project_dir)?;
 
-    render_file(
-        &tera,
-        "cmake/fetch.cmake.tera",
-        project_dir.join("cmake/fetch.cmake"),
-        &ctx,
-    );
-    render_file(
-        &tera,
-        "cmake/link.cmake.tera",
-        project_dir.join("cmake/link.cmake"),
-        &ctx,
-    );
+    const TOML_FNAME: &str = "project.toml";
+    let contents = fs::read_to_string(TOML_FNAME).expect("Failed to read project.toml");
+    let doc = contents.parse::<DocumentMut>().expect("invalid doc");
+
+    let project_name = doc["package"]["name"].to_string();
+    let packages = get_packages_from_doc(&doc);
+
+    generate_cmake_files(&project_dir, &project_name, &packages)?;
+
+    println!("Synced project.toml to cmake files");
 
     Ok(())
 }
@@ -556,6 +585,7 @@ fn main() {
             fetch_mode,
             lib_names,
         }) => add_package(repo, base_url, tag, fetch_mode, lib_names).expect("Cannot add package"),
+        Some(Commands::Sync) => sync_project().expect("Failed to sync project"),
         None => {
             if let Some(script) = cli.scripts {
                 run_script(&script).expect("Failed to run script")
