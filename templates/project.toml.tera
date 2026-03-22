@@ -7,7 +7,10 @@ build = [
   ["cmake", "--preset", "default", "-B", "build", "-S", "."],
   ["cmake", "--build", "build", "--preset", "default"]
 ]
-run = ["./build/src/{{ project_name }}"]
+run = [
+  ["cmake", "--build", "build", "--preset", "default"],
+  ["./build/src/{{ project_name }}"]
+]
 install = ["cmake", "--install", "build"]
 test = ["ctest", "--output-on-failure", "--test-dir", "build"]
 format = ["clang-format", "-i", "src/*.cpp"]

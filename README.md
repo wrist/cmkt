@@ -42,5 +42,5 @@ $ cargo install --path .
 - [ ] Packaging using CPack
 - [x] Add sync command to reflect manually edited project.toml to link/fetch.cmake
 - [x] Automatic branch/tag detection using `git ls-remote` through git2 library
-- [ ] Execute sync command before execute build command if needed
-- [ ] Execute build command before execute run command if needed
+- [x] Execute sync command before execute build command if needed
+- [x] Execute build command before execute run command if needed
