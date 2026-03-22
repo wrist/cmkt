@@ -214,6 +214,20 @@ fn execute_script(value: &Value) -> Result<()> {
     Ok(())
 }
 
+fn is_sync_needed(root: &Path) -> Result<bool> {
+    let toml_path = root.join("project.toml");
+    let cmake_path = root.join("cmake/fetch.cmake");
+
+    if !cmake_path.exists() {
+        return Ok(true);
+    }
+
+    let toml_meta = fs::metadata(&toml_path)?;
+    let cmake_meta = fs::metadata(&cmake_path)?;
+
+    Ok(toml_meta.modified()? > cmake_meta.modified()?)
+}
+
 fn find_project_root() -> Result<PathBuf> {
     let mut current_dir = std::env::current_dir()?;
     loop {
@@ -232,6 +246,11 @@ fn find_project_root() -> Result<PathBuf> {
 fn run_script(name: &str) -> Result<()> {
     let root = find_project_root()?;
     std::env::set_current_dir(&root)?;
+
+    if is_sync_needed(&root)? {
+        println!("project.toml is newer than cmake files. Syncing...");
+        sync_project()?;
+    }
 
     const TOML_FNAME: &str = "project.toml";
 
