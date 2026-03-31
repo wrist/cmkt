@@ -13,8 +13,8 @@ use toml_edit::{Array, DocumentMut, Item, value};
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Cli {
-    #[arg(help = "Run script defined in project.toml(alias of cmkt scripts)")]
-    scripts: Option<String>,
+    #[arg(help = "Run script defined in project.toml(alias of cmkt scripts)", trailing_var_arg = true, allow_hyphen_values = true)]
+    scripts: Vec<String>,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -43,7 +43,11 @@ enum Commands {
         with_tests: bool,
     },
     /// Run script defined in project.toml
-    Scripts { script: String },
+    Scripts {
+        script: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Add FetchContent
     Add {
         /// Repository name (user/repository or organization/repository)
@@ -86,6 +90,26 @@ struct TemplateData {
     generator: String,
     binary_type: String,
     with_tests: bool,
+}
+
+fn expand_args(cmd: &str, args: &[String]) -> String {
+    let mut expanded = cmd.to_string();
+
+    // Replace $1 .. $9
+    for i in 1..=9 {
+        let placeholder = format!("${}", i);
+        let replacement = if i <= args.len() {
+            &args[i - 1]
+        } else {
+            ""
+        };
+        expanded = expanded.replace(&placeholder, replacement);
+    }
+
+    // Replace $@
+    expanded = expanded.replace("$@", &args.join(" "));
+
+    expanded
 }
 
 fn get_packages_from_doc(doc: &DocumentMut) -> Vec<PackageData> {
@@ -179,12 +203,13 @@ fn run_command(cmd_parts: Vec<&str>, use_shell: bool) -> Result<()> {
     Ok(())
 }
 
-fn execute_script(value: &Value) -> Result<()> {
+fn execute_script(value: &Value, args: &[String]) -> Result<()> {
     match value {
         Value::String(cmd_str) => {
             // Case 1: String -> Shell execution
-            println!("Execute (shell): {}", cmd_str);
-            run_command(vec![cmd_str], true)?;
+            let expanded = expand_args(cmd_str, args);
+            println!("Execute (shell): {}", expanded);
+            run_command(vec![&expanded], true)?;
         }
         Value::Array(cmd_array) => {
             if cmd_array.is_empty() {
@@ -195,15 +220,21 @@ fn execute_script(value: &Value) -> Result<()> {
             if cmd_array[0].is_array() {
                 // Case 3: Array of arrays -> Multiple commands
                 for sub_value in cmd_array {
-                    execute_script(sub_value)?;
+                    execute_script(sub_value, args)?;
                 }
             } else {
                 // Case 2: Array of strings -> Single command with args
-                let args: Vec<&str> = cmd_array.iter().filter_map(|v| v.as_str()).collect();
+                let cmd_vec: Vec<String> = cmd_array
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| expand_args(s, args))
+                    .collect();
 
-                if !args.is_empty() {
-                    println!("Execute (direct): {:?}", args);
-                    run_command(args, false)?;
+                let cmd_parts: Vec<&str> = cmd_vec.iter().map(|s| s.as_str()).collect();
+
+                if !cmd_parts.is_empty() {
+                    println!("Execute (direct): {:?}", cmd_parts);
+                    run_command(cmd_parts, false)?;
                 }
             }
         }
@@ -243,7 +274,7 @@ fn find_project_root() -> Result<PathBuf> {
     }
 }
 
-fn run_script(name: &str) -> Result<()> {
+fn run_script(name: &str, args: &[String]) -> Result<()> {
     let root = find_project_root()?;
     std::env::set_current_dir(&root)?;
 
@@ -269,7 +300,7 @@ fn run_script(name: &str) -> Result<()> {
             std::io::Error::new(std::io::ErrorKind::NotFound, "Script not found")
         })?;
 
-    execute_script(script_value)
+    execute_script(script_value, args)
 }
 
 fn get_remote_default_branch(url: &str) -> Result<String> {
@@ -596,7 +627,9 @@ fn main() {
             binary_type,
             with_tests,
         }) => create_project(name, cpp, generator, binary_type, with_tests),
-        Some(Commands::Scripts { script }) => run_script(&script).expect("Failed to run script"),
+        Some(Commands::Scripts { script, args }) => {
+            run_script(&script, &args).expect("Failed to run script")
+        }
         Some(Commands::Add {
             repo,
             base_url,
@@ -606,8 +639,10 @@ fn main() {
         }) => add_package(repo, base_url, tag, fetch_mode, lib_names).expect("Cannot add package"),
         Some(Commands::Sync) => sync_project().expect("Failed to sync project"),
         None => {
-            if let Some(script) = cli.scripts {
-                run_script(&script).expect("Failed to run script")
+            if !cli.scripts.is_empty() {
+                let script = &cli.scripts[0];
+                let args = &cli.scripts[1..];
+                run_script(script, args).expect("Failed to run script")
             }
         }
     }
