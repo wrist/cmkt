@@ -13,9 +13,6 @@ use toml_edit::{Array, DocumentMut, Item, value};
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Cli {
-    #[arg(help = "Run script defined in project.toml(alias of cmkt scripts)", trailing_var_arg = true, allow_hyphen_values = true)]
-    scripts: Vec<String>,
-
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -42,12 +39,6 @@ enum Commands {
         #[arg(long)]
         with_tests: bool,
     },
-    /// Run script defined in project.toml
-    Scripts {
-        script: String,
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
     /// Add FetchContent
     Add {
         /// Repository name (user/repository or organization/repository)
@@ -66,11 +57,22 @@ enum Commands {
         fetch_mode: String,
 
         /// Link library name
-        #[arg(short, long, default_value=None)]
+        #[arg(short, long, default_value = None)]
         lib_names: Option<Vec<String>>,
     },
     /// Sync project.toml to cmake files
     Sync,
+
+    /// Script defined in project.toml
+    #[command(external_subcommand)]
+    Script(Vec<String>),
+}
+
+#[derive(Parser, Debug)]
+#[command(no_binary_name = true)]
+struct ScriptArgs {
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    inner_args: Vec<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -98,11 +100,7 @@ fn expand_args(cmd: &str, args: &[String]) -> String {
     // Replace $1 .. $9
     for i in 1..=9 {
         let placeholder = format!("${}", i);
-        let replacement = if i <= args.len() {
-            &args[i - 1]
-        } else {
-            ""
-        };
+        let replacement = if i <= args.len() { &args[i - 1] } else { "" };
         expanded = expanded.replace(&placeholder, replacement);
     }
 
@@ -627,9 +625,6 @@ fn main() {
             binary_type,
             with_tests,
         }) => create_project(name, cpp, generator, binary_type, with_tests),
-        Some(Commands::Scripts { script, args }) => {
-            run_script(&script, &args).expect("Failed to run script")
-        }
         Some(Commands::Add {
             repo,
             base_url,
@@ -638,12 +633,19 @@ fn main() {
             lib_names,
         }) => add_package(repo, base_url, tag, fetch_mode, lib_names).expect("Cannot add package"),
         Some(Commands::Sync) => sync_project().expect("Failed to sync project"),
-        None => {
-            if !cli.scripts.is_empty() {
-                let script = &cli.scripts[0];
-                let args = &cli.scripts[1..];
-                run_script(script, args).expect("Failed to run script")
+        Some(Commands::Script(args)) => {
+            let script = &args[0];
+            let script_args = &args[1..];
+
+            match ScriptArgs::try_parse_from(script_args) {
+                Ok(parsed) => run_script(script, &parsed.inner_args).expect("Failed to run script"),
+                Err(e) => {
+                    e.exit();
+                }
             }
+        }
+        None => {
+            println!("Use --help to see available commands");
         }
     }
 }
