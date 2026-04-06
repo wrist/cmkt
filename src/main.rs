@@ -45,12 +45,16 @@ enum Commands {
         repo: String,
 
         /// Repository base url
-        #[arg(short, long, default_value = "https://github.com")]
+        #[arg(short = 'u', long, default_value = "https://github.com")]
         base_url: String,
 
         /// Repository version(tag or branch)
-        #[arg(short, long)]
+        #[arg(short, long, conflicts_with = "branch", num_args = 0..=1, default_missing_value = "__DEFAULT__")]
         tag: Option<String>,
+
+        /// Repository branch name. If no value is provided, it uses the default branch.
+        #[arg(short, long, conflicts_with = "tag", num_args = 0..=1, default_missing_value = "__DEFAULT__")]
+        branch: Option<String>,
 
         /// FetchContent declare or populate
         #[arg(short, long, default_value = "declare")]
@@ -360,10 +364,77 @@ fn get_remote_default_branch(url: &str) -> Result<String> {
     Ok("main".to_string())
 }
 
+fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
+    fn parse_version(v: &str) -> Vec<u64> {
+        v.trim_start_matches('v')
+            .split(|c: char| !c.is_numeric())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.parse().unwrap_or(0))
+            .collect()
+    }
+
+    let parts1 = parse_version(v1);
+    let parts2 = parse_version(v2);
+
+    for (n1, n2) in parts1.iter().zip(parts2.iter()) {
+        if n1 != n2 {
+            return n1.cmp(n2);
+        }
+    }
+    parts1.len().cmp(&parts2.len())
+}
+
+fn get_remote_latest_tag(url: &str) -> Result<Option<String>> {
+    use git2::{Direction, Remote};
+
+    let mut remote = Remote::create_detached(url).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to create remote for {}: {}", url, e),
+        )
+    })?;
+
+    remote.connect(Direction::Fetch).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to connect to remote {}: {}", url, e),
+        )
+    })?;
+
+    let heads = remote.list().map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to list refs from {}: {}", url, e),
+        )
+    })?;
+
+    let mut tags: Vec<String> = heads
+        .iter()
+        .filter_map(|h| {
+            let name = h.name();
+            if name.starts_with("refs/tags/") {
+                // refs/tags/v1.0.0 -> v1.0.0
+                Some(name.replace("refs/tags/", ""))
+            } else {
+                None
+            }
+        })
+        .filter(|t| !t.ends_with("^{}")) // Remove annotated tag dereferences
+        .collect();
+
+    if tags.is_empty() {
+        return Ok(None);
+    }
+
+    tags.sort_by(|a, b| compare_versions(a, b));
+    Ok(tags.last().cloned())
+}
+
 fn add_package(
     repo: String,
     base_url: String,
     tag: Option<String>,
+    branch: Option<String>,
     fetch_mode: String,
     mut lib_names: Option<Vec<String>>,
 ) -> Result<()> {
@@ -372,10 +443,42 @@ fn add_package(
 
     let url = format!("{}/{}.git", base_url, repo);
     let tag = if let Some(t) = tag {
-        t
+        if t == "__DEFAULT__" {
+            println!("Detecting latest tag for {}...", url);
+            match get_remote_latest_tag(&url)? {
+                Some(tag_name) => {
+                    println!("Latest tag detected: {}", tag_name);
+                    tag_name
+                }
+                None => {
+                    println!("No tags found. Detecting default branch...");
+                    get_remote_default_branch(&url)?
+                }
+            }
+        } else {
+            println!("Using tag {} for {}...", t, url);
+            t
+        }
+    } else if let Some(b) = branch {
+        if b == "__DEFAULT__" {
+            println!("Detecting default branch for {}...", url);
+            get_remote_default_branch(&url)?
+        } else {
+            println!("Using branch {} for {}...", b, url);
+            b
+        }
     } else {
-        println!("Detecting default branch for {}...", url);
-        get_remote_default_branch(&url)?
+        println!("Detecting latest tag for {}...", url);
+        match get_remote_latest_tag(&url)? {
+            Some(t) => {
+                println!("Latest tag detected: {}", t);
+                t
+            }
+            None => {
+                println!("No tags found. Detecting default branch...");
+                get_remote_default_branch(&url)?
+            }
+        }
     };
 
     let name = repo.replace("/", "_");
@@ -601,7 +704,9 @@ fn init_project(
 
     if root_cmakelists_generated || src_cmakelists_generated || tests_cmakelists_generated {
         println!("Generated missing CMakeLists.txt files.");
-        println!("Note: If you have source files outside of 'src/' or 'tests/', please adjust CMakeLists.txt manually.");
+        println!(
+            "Note: If you have source files outside of 'src/' or 'tests/', please adjust CMakeLists.txt manually."
+        );
     } else {
         println!("\nNext steps:");
         println!("1. Add the following to your root CMakeLists.txt:");
@@ -808,9 +913,10 @@ fn main() {
             repo,
             base_url,
             tag,
+            branch,
             fetch_mode,
             lib_names,
-        }) => add_package(repo, base_url, tag, fetch_mode, lib_names).expect("Cannot add package"),
+        }) => add_package(repo, base_url, tag, branch, fetch_mode, lib_names).expect("Cannot add package"),
         Some(Commands::Sync) => sync_project().expect("Failed to sync project"),
         Some(Commands::Init {
             name,

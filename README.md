@@ -43,8 +43,9 @@ $ cargo install --path .
 - [ ] Packaging using CPack
 - [x] Add sync command to reflect manually edited project.toml to link/fetch.cmake
 - [x] Automatic default branch detection using `git ls-remote` through git2 library
-- [ ] Automatic latest tag detection using `git describe --tags --abbrev=0` through git2 library
+- [x] Automatic latest tag detection using `git2` remote list
 - [ ] Automatic library linking for fetched libraries
 - [x] Execute sync command before execute build command if needed
 - [x] Execute build command before execute run command if needed
 - [x] Add Init command to initialize an existing project
+- [ ] Introduce lock file(`project.lock`)
