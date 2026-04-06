@@ -63,6 +63,29 @@ enum Commands {
     /// Sync project.toml to cmake files
     Sync,
 
+    /// Initialize an existing project
+    Init {
+        /// Project name (default: current directory name)
+        #[arg(long)]
+        name: Option<String>,
+
+        /// C++ version (default: 17)
+        #[arg(long, default_value = "17")]
+        cpp: String,
+
+        /// Generator (default: Ninja)
+        #[arg(long, default_value = "Ninja")]
+        generator: String,
+
+        /// executable|static|shared
+        #[arg(long, default_value = "executable")]
+        binary_type: String,
+
+        /// Include test directory
+        #[arg(long)]
+        with_tests: bool,
+    },
+
     /// Script defined in project.toml
     #[command(external_subcommand)]
     Script(Vec<String>),
@@ -432,6 +455,162 @@ fn sync_project() -> Result<()> {
     Ok(())
 }
 
+fn init_project(
+    name: Option<String>,
+    cpp: String,
+    generator: String,
+    binary_type: String,
+    with_tests: bool,
+) {
+    let current_dir = std::env::current_dir().expect("Failed to get current directory");
+    let project_name = name.unwrap_or_else(|| {
+        current_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("my_project")
+            .to_string()
+    });
+
+    if current_dir.join("project.toml").exists() {
+        eprintln!("Error: project.toml already exists.");
+        std::process::exit(1);
+    }
+
+    if !current_dir.join("cmake").exists() {
+        fs::create_dir(current_dir.join("cmake")).unwrap();
+    }
+
+    let data = TemplateData {
+        project_name: project_name.clone(),
+        cpp_version: cpp,
+        generator: generator.clone(),
+        binary_type: binary_type.clone(),
+        with_tests,
+    };
+
+    let mut ctx = Context::new();
+    ctx.insert("project_name", &data.project_name);
+    ctx.insert("cpp_version", &data.cpp_version);
+    ctx.insert("generator", &data.generator);
+    ctx.insert("binary_type", &data.binary_type);
+    ctx.insert("with_tests", &data.with_tests);
+
+    let mut tera = Tera::default();
+
+    let _ = tera.add_raw_template(
+        "project.toml.tera",
+        include_str!("../templates/project.toml.tera"),
+    );
+    let _ = tera.add_raw_template(
+        "CMakePresets.json.tera",
+        include_str!("../templates/CMakePresets.json.tera"),
+    );
+    let _ = tera.add_raw_template(
+        "CMakeLists.txt.tera",
+        include_str!("../templates/CMakeLists.txt.tera"),
+    );
+    let _ = tera.add_raw_template(
+        "src/CMakeLists.txt.tera",
+        include_str!("../templates/src/CMakeLists.txt.tera"),
+    );
+    let _ = tera.add_raw_template(
+        "cmake/fetch.cmake.tera",
+        include_str!("../templates/cmake/fetch.cmake.tera"),
+    );
+    let _ = tera.add_raw_template(
+        "cmake/link.cmake.tera",
+        include_str!("../templates/cmake/link.cmake.tera"),
+    );
+
+    render_file(
+        &tera,
+        "project.toml.tera",
+        current_dir.join("project.toml"),
+        &ctx,
+    );
+
+    if !current_dir.join("CMakePresets.json").exists() {
+        render_file(
+            &tera,
+            "CMakePresets.json.tera",
+            current_dir.join("CMakePresets.json"),
+            &ctx,
+        );
+    }
+
+    let mut root_cmakelists_generated = false;
+    if !current_dir.join("CMakeLists.txt").exists() {
+        render_file(
+            &tera,
+            "CMakeLists.txt.tera",
+            current_dir.join("CMakeLists.txt"),
+            &ctx,
+        );
+        root_cmakelists_generated = true;
+    }
+
+    if !current_dir.join("src").exists() {
+        fs::create_dir(current_dir.join("src")).unwrap();
+    }
+
+    let mut src_cmakelists_generated = false;
+    if !current_dir.join("src/CMakeLists.txt").exists() {
+        render_file(
+            &tera,
+            "src/CMakeLists.txt.tera",
+            current_dir.join("src/CMakeLists.txt"),
+            &ctx,
+        );
+        src_cmakelists_generated = true;
+    }
+
+    let mut tests_cmakelists_generated = false;
+    if with_tests {
+        if !current_dir.join("tests").exists() {
+            fs::create_dir(current_dir.join("tests")).unwrap();
+        }
+        if !current_dir.join("tests/CMakeLists.txt").exists() {
+            let _ = tera.add_raw_template(
+                "tests/CMakeLists.txt.tera",
+                include_str!("../templates/tests/CMakeLists.txt.tera"),
+            );
+            render_file(
+                &tera,
+                "tests/CMakeLists.txt.tera",
+                current_dir.join("tests/CMakeLists.txt"),
+                &ctx,
+            );
+            tests_cmakelists_generated = true;
+        }
+    }
+
+    render_file(
+        &tera,
+        "cmake/fetch.cmake.tera",
+        current_dir.join("cmake/fetch.cmake"),
+        &ctx,
+    );
+    render_file(
+        &tera,
+        "cmake/link.cmake.tera",
+        current_dir.join("cmake/link.cmake"),
+        &ctx,
+    );
+
+    println!("Initialized project: {}", project_name);
+
+    if root_cmakelists_generated || src_cmakelists_generated || tests_cmakelists_generated {
+        println!("Generated missing CMakeLists.txt files.");
+        println!("Note: If you have source files outside of 'src/' or 'tests/', please adjust CMakeLists.txt manually.");
+    } else {
+        println!("\nNext steps:");
+        println!("1. Add the following to your root CMakeLists.txt:");
+        println!("   include(cmake/fetch.cmake)");
+        println!("2. Add the following to your executable/library target in CMakeLists.txt:");
+        println!("   include(cmake/link.cmake)");
+    }
+}
+
 fn create_project(
     name: String,
     cpp: String,
@@ -633,6 +812,13 @@ fn main() {
             lib_names,
         }) => add_package(repo, base_url, tag, fetch_mode, lib_names).expect("Cannot add package"),
         Some(Commands::Sync) => sync_project().expect("Failed to sync project"),
+        Some(Commands::Init {
+            name,
+            cpp,
+            generator,
+            binary_type,
+            with_tests,
+        }) => init_project(name, cpp, generator, binary_type, with_tests),
         Some(Commands::Script(args)) => {
             let script = &args[0];
             let script_args = &args[1..];

@@ -37,10 +37,14 @@ $ cargo install --path .
 - [ ] Introduce config file(`cmkt.toml`)
 - [ ] Project generation based on user prepared template directory
 - [x] Project root discovery and run command anywhere
-- [ ] Pass args to scripts and pre defined macro
+- [x] Pass args to scripts
+- [ ] Pass environment variables to scripts
 - [x] Modify scripts format from oneliner to command with args array
 - [ ] Packaging using CPack
 - [x] Add sync command to reflect manually edited project.toml to link/fetch.cmake
-- [x] Automatic branch/tag detection using `git ls-remote` through git2 library
+- [x] Automatic default branch detection using `git ls-remote` through git2 library
+- [ ] Automatic latest tag detection using `git describe --tags --abbrev=0` through git2 library
+- [ ] Automatic library linking for fetched libraries
 - [x] Execute sync command before execute build command if needed
 - [x] Execute build command before execute run command if needed
+- [x] Add Init command to initialize an existing project
